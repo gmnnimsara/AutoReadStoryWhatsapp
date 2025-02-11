@@ -8,76 +8,52 @@ const path = require('path');
 let useCode = true;
 let loggedInNumber;
 
-async function connectToWhatsApp(){
-    const sessionPath = path.join(__dirname, 'sessions');
-    const sessionExists = fs.existsSync(sessionPath) && fs.readdirSync(sessionPath).length > 0;
-    
-    const { state, saveCreds } = await useMultiFileAuthState('sessions');
-
-    const sock = makeWASocket({
-        logger: pino({ level: 'fatal' }),
-        auth: state,
-        printQRInTerminal: !useCode,
-        defaultQueryTimeoutMs: undefined,
-        keepAliveIntervalMs: 30000,
-        browser: Browsers.macOS('Chrome'),
-        shouldSyncHistoryMessage: () => true,
-        markOnlineOnConnect: true,
-        syncFullHistory: true,
-        generateHighQualityLinkPreview: true
+//===================SESSION-AUTH============================
+if (!fs.existsSync(__dirname + "/auth_info_baileys/creds.json")) {
+    if (!config.SESSION_ID)
+      return console.log("Please add your session to SESSION_ID env !!");
+    const sessdata = config.SESSION_ID;
+    const filer = File.fromURL(`https://mega.nz/file/${sessdata}`);
+    filer.download((err, data) => {
+      if (err) throw err;
+      fs.writeFile(__dirname + "/auth_info_baileys/creds.json", data, () => {
+        console.log("Session downloaded ✅");
+      });
     });
-
-    if (useCode && !sessionExists) {
-
-        const rl = readline.createInterface({
-            input: process.stdin,
-            output: process.stdout
-        });
-
-        console.log("Halo sepertinya kamu belum login, Mau login wangsaf pakai pairing code?\nSilahkan balas dengan (y/n)\nketik y untuk setuju atau ketik n untuk login menggunakan qrcode") // pesan untuk yang menggunakan panel
-
-        const askPairingCode = () => {
-            rl.question('\nApakah kamu ingin menggunakan pairing code untuk login ke wangsaf? (y/n): ', async (answer) => {
-                if (answer.toLowerCase() === 'y' || answer.trim() === '') {
-                    console.log("\nWokeh kalau gitu silahkan masukkan nomor wangsafmu!\ncatatan : awali dengan 62 contoh 628123456789") // pesan untuk yang menggunakan panel
-                    const askWaNumber = () => {
-                        rl.question('\nMasukkan nomor wangsaf Anda: ', async (waNumber) => {
-                            if (!/^\d+$/.test(waNumber)) {
-                                console.log('\nNomor harus berupa angka!\nSilakan masukkan nomor wangsaf kembali!.');
-                                askWaNumber();
-                            } else if (!waNumber.startsWith('62')) {
-                                console.log('\nNomor harus diawali dengan 62!\nContoh : 628123456789\nSilakan masukkan nomor wangsaf kembali!.');
-                                askWaNumber();
-                            } else {
-                                const code = await sock.requestPairingCode(waNumber);
-                                console.log('\nCek notifikasi wangsafmu dan masukin kode login wangsaf:', code);
-                                rl.close();
-                            }
-                        });
-                    };
-                    askWaNumber();
-                } else if (answer.toLowerCase() === 'n') {
-                    useCode = false;
-                    console.log('\nBuka wangsafmu lalu klik titik tiga di kanan atas kemudian klik perangkat tertaut setelah itu Silahkan scan QR code dibawah untuk login ke wangsaf');
-                    connectToWhatsApp();
-                    rl.close();
-                } else {
-                    console.log('\nInput tidak valid. Silakan masukkan "y" atau "n".');
-                    askPairingCode();
-                }
-            });
-        };
-    
-        askPairingCode();
-    }
-    
-    sock.ev.on('connection.update', async (update) => {
-        const { connection, lastDisconnect } = update;
-        if(connection === 'close') {
-            const shouldReconnect = lastDisconnect.error?.output.statusCode !== DisconnectReason.loggedOut;
-            if(shouldReconnect) {
-                console.log('Mencoba menghubungkan ke wangsaf...\n');
-                connectToWhatsApp();
+  }
+  
+  const express = require("express");
+  const app = express();
+  const port = process.env.PORT || 8000;
+  
+  //=============================================
+  
+  async function connectToWA() {
+  
+    //===========================
+  
+    console.log("Connecting ASTRON-MD🤡");
+    const { state, saveCreds } = await useMultiFileAuthState(
+      __dirname + "/auth_info_baileys/"
+    );
+    var { version } = await fetchLatestBaileysVersion();
+  
+    const robin = makeWASocket({
+      logger: P({ level: "silent" }),
+      printQRInTerminal: false,
+      browser: Browsers.macOS("Firefox"),
+      syncFullHistory: true,
+      auth: state,
+      version,
+    });
+  
+    robin.ev.on("connection.update", (update) => {
+      const { connection, lastDisconnect } = update;
+      if (connection === "close") {
+        if (
+          lastDisconnect.error.output.statusCode !== DisconnectReason.loggedOut
+        ) {
+          connectToWA();
             } else {
                 console.log('Terputus dari wangsaf, silahkan hapus folder sessions dan login ke wangsaf kembali');
             }
